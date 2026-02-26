@@ -24,8 +24,9 @@
     .link-like { margin-top: .75rem; color: #005ea6; background: none; border: none; padding: 0; cursor: pointer; text-decoration: underline; font-weight: 600; }
     #personManager { display: none; margin-top: .75rem; padding: .75rem; background: #f6f8fa; border-radius: 8px; border: 1px solid #e5e7eb; }
     #personManager h3 { margin: 0 0 .5rem; font-size: 1rem; }
-    #personListView { list-style: none; padding: 0; margin: 0; max-height: 220px; overflow: auto; }
-    #personListView li { display: flex; align-items: center; justify-content: space-between; padding: .35rem .5rem; border-bottom: 1px solid #e5e7eb; }
+    #personListView { list-style: none; padding: 0; margin: 0; max-height: 240px; overflow: auto; }
+    #personListView li { display: grid; grid-template-columns: 1fr auto auto; gap: .5rem; align-items: center; padding: .35rem .5rem; border-bottom: 1px solid #e5e7eb; }
+    .sel-btn { background: #eef6ff; color: #005ea6; border: none; padding: .3rem .6rem; border-radius: 6px; cursor: pointer; }
     .del-btn { background: #ffeeee; color: #a00000; border: none; padding: .3rem .6rem; border-radius: 6px; cursor: pointer; }
     .danger-all { background: #ffdddd; color: #7a0000; border: none; padding: .5rem .8rem; border-radius: 8px; cursor: pointer; margin-top: .5rem; }
     .toolbar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
@@ -41,13 +42,13 @@
   <small class="hint">複数はカンマ区切り（,）</small>
 
   <label>機材名（任意）</label>
-  <input type="text" id="device" placeholder="例: iPhone 15 / Wi-Fiルータ など">
+  <input type="text" id="device" placeholder="例: スマホ1 / Wi-Fiルータ など">
 
   <label>担当者名（入力可・候補から選択可）</label>
   <input type="text" id="person" list="personDatalist" placeholder="例: 山田太郎 / 佐藤花子 など">
   <datalist id="personDatalist"></datalist>
   <div class="toolbar">
-    <button type="button" class="link-like" id="toggleManager">担当者を管理</button>
+    <button type="button" class="link-like" id="toggleManager">担当者選択</button>
   </div>
 
   <div id="personManager">
@@ -80,36 +81,35 @@
   const personManagerEl = $('personManager');
   const personListViewEl = $('personListView');
 
-  function normalizeList(s) {
-    return (s || '').split(',').map(x => x.trim()).filter(Boolean).join(', ');
-  }
-  function loadPersons() {
-    try { const json = localStorage.getItem(LS_KEYS.personList); const arr = json ? JSON.parse(json) : []; return Array.isArray(arr) ? arr : []; } catch { return []; }
-  }
+  function normalizeList(s) { return (s || '').split(',').map(x => x.trim()).filter(Boolean).join(', '); }
+  function loadPersons() { try { const json = localStorage.getItem(LS_KEYS.personList); const arr = json ? JSON.parse(json) : []; return Array.isArray(arr) ? arr : []; } catch { return []; } }
   function savePersons(arr) {
     const seen = new Set(); const deduped = [];
-    for (const name of arr) {
-      const key = (name || '').trim(); if (!key) continue; const lower = key.toLowerCase();
-      if (seen.has(lower)) continue; seen.add(lower); deduped.push(key); if (deduped.length >= PERSON_LIST_MAX) break;
-    }
+    for (const name of arr) { const key=(name||'').trim(); if(!key) continue; const lower=key.toLowerCase(); if(seen.has(lower)) continue; seen.add(lower); deduped.push(key); if(deduped.length>=PERSON_LIST_MAX) break; }
     localStorage.setItem(LS_KEYS.personList, JSON.stringify(deduped)); return deduped;
   }
   function upsertPerson(name) {
-    const trimmed = (name || '').trim(); if (!trimmed) return;
-    const list = loadPersons(); const lower = trimmed.toLowerCase();
-    const filtered = list.filter(n => (n || '').trim().toLowerCase() != lower);
-    filtered.unshift(trimmed); const saved = savePersons(filtered);
-    renderPersonOptions(saved); renderPersonList(saved);
+    const trimmed=(name||'').trim(); if(!trimmed) return; const list=loadPersons(); const lower=trimmed.toLowerCase();
+    const filtered=list.filter(n => (n||'').trim().toLowerCase()!==lower); filtered.unshift(trimmed);
+    const saved=savePersons(filtered); renderPersonOptions(saved); renderPersonList(saved);
   }
   function removePerson(name) {
-    const lower = (name || '').trim().toLowerCase();
-    const list = loadPersons().filter(n => (n || '').trim().toLowerCase() !== lower);
-    const saved = savePersons(list); renderPersonOptions(saved); renderPersonList(saved);
-    if ((personEl.value || '').trim().toLowerCase() === lower) { personEl.value = ''; localStorage.setItem(LS_KEYS.person, ''); }
+    const lower=(name||'').trim().toLowerCase(); const list=loadPersons().filter(n => (n||'').trim().toLowerCase()!==lower);
+    const saved=savePersons(list); renderPersonOptions(saved); renderPersonList(saved);
+    if((personEl.value||'').trim().toLowerCase()===lower){ personEl.value=''; localStorage.setItem(LS_KEYS.person,''); }
   }
-  function clearAllPersons() { localStorage.removeItem(LS_KEYS.personList); renderPersonOptions([]); renderPersonList([]); }
-  function renderPersonOptions(arr) { personDatalistEl.innerHTML = ''; arr.forEach(name => { const opt = document.createElement('option'); opt.value = name; personDatalistEl.appendChild(opt); }); }
-  function renderPersonList(arr) { personListViewEl.innerHTML=''; arr.forEach(name => { const li=document.createElement('li'); const span=document.createElement('span'); span.textContent=name; const btn=document.createElement('button'); btn.className='del-btn'; btn.textContent='削除'; btn.addEventListener('click',()=>removePerson(name)); li.appendChild(span); li.appendChild(btn); personListViewEl.appendChild(li); }); }
+  function renderPersonOptions(arr) { personDatalistEl.innerHTML=''; arr.forEach(name=>{ const opt=document.createElement('option'); opt.value=name; personDatalistEl.appendChild(opt); }); }
+  function renderPersonList(arr) {
+    personListViewEl.innerHTML='';
+    arr.forEach(name => {
+      const li=document.createElement('li');
+      const span=document.createElement('span'); span.textContent=name;
+      const sel=document.createElement('button'); sel.className='sel-btn'; sel.textContent='選択'; sel.addEventListener('click',()=>{ personEl.value=name; localStorage.setItem(LS_KEYS.person, name); });
+      const del=document.createElement('button'); del.className='del-btn'; del.textContent='削除'; del.addEventListener('click',()=>removePerson(name));
+      li.appendChild(span); li.appendChild(sel); li.appendChild(del); personListViewEl.appendChild(li);
+    });
+  }
+  function clearAllPersons(){ localStorage.removeItem(LS_KEYS.personList); renderPersonOptions([]); renderPersonList([]); }
 
   (function init(){
     const persons=loadPersons(); renderPersonOptions(persons); renderPersonList(persons);
@@ -118,15 +118,29 @@
     personEl.addEventListener('change',()=>upsertPerson(personEl.value)); personEl.addEventListener('blur',()=>upsertPerson(personEl.value));
   })();
 
-  function subjectPhrase(type){ const name=(deviceEl.value||'').trim()||'機材'; return type==='out'? `${name}を持ち出しました` : `${name}を返却しました`; }
-  function bodyPhrase(type){ const subj=subjectPhrase(type); const person=(personEl.value||'').trim(); return person? `${subj}\n\n担当：${person}` : subj; }
+  // 件名：持出も返却も指定フォーマットに統一
+  function subjectPhrase(type){
+    const name=(deviceEl.value||'').trim()||'機材';
+    if(type==='out'){
+      return `【持出】${name}\u3000を持ち出しました`;
+    }
+    return `【返却】${name}\u3000を返却しました`;
+  }
+
+  // 本文：件名と同じ + 担当行（CRLF 改行）
+  function bodyPhrase(type){
+    const subj=subjectPhrase(type);
+    const person=(personEl.value||'').trim();
+    return person? `${subj}\r\n\r\n担当：${person}` : subj;
+  }
 
   function sendMail(type){
     const to=normalizeList(toEl.value); if(!to){ alert('宛先（To）を入力してください。'); return; }
     localStorage.setItem(LS_KEYS.to,to); localStorage.setItem(LS_KEYS.device,(deviceEl.value||'').trim()); localStorage.setItem(LS_KEYS.person,(personEl.value||'').trim()); upsertPerson(personEl.value);
     const subject=subjectPhrase(type); const body=bodyPhrase(type);
-    const params=new URLSearchParams(); params.set('subject',subject); params.set('body', body.replace(/\r?\n/g,'%0D%0A'));
-    const mailto='mailto:'+encodeURIComponent(to).replace(/%2C/g, ',')+'?'+params.toString(); setTimeout(()=>{ window.location.href=mailto; },50);
+    const params=new URLSearchParams(); params.set('subject',subject); params.set('body', body);
+    const mailto='mailto:'+encodeURIComponent(to).replace(/%2C/g, ',')+'?'+params.toString();
+    setTimeout(()=>{ window.location.href=mailto; },50); // iOS Safari 対策
   }
 
   document.getElementById('sendOut').addEventListener('click',()=>sendMail('out'));
