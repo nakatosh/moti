@@ -1,10 +1,153 @@
-<style>
-    .sel-btn {
-        background-color: #003d7a;
-        color: white;
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>持出／返却 連絡</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0078d4" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 1.5rem; background: #fafafa; }
+    form { max-width: 720px; margin: auto; background: #fff; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+    h2 { margin: 0 0 .5rem; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    input, button { font-size: 1rem; }
+    input { width: 100%; padding: .85rem; margin-top: .35rem; border-radius: 10px; border: 1px solid #d0d7de; background: #fff; }
+    small.hint { color: #666; display: block; margin-top: .25rem; }
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: 1rem; }
+    .btn { padding: 1rem; border: none; border-radius: 10px; color: #fff; font-weight: 700; cursor: pointer; }
+    .btn-out { background: #0078d4; }  /* 持出 */
+    .btn-ret { background: #0e7c57; }  /* 返却 */
+    .link-like { margin-top: .75rem; color: #005ea6; background: none; border: none; padding: 0; cursor: pointer; text-decoration: underline; font-weight: 600; }
+    #personManager { display: none; margin-top: .75rem; padding: .75rem; background: #f6f8fa; border-radius: 8px; border: 1px solid #e5e7eb; }
+    #personManager h3 { margin: 0 0 .5rem; font-size: 1rem; }
+    #personListView { list-style: none; padding: 0; margin: 0; max-height: 240px; overflow: auto; }
+    #personListView li { display: grid; grid-template-columns: 1fr auto auto; gap: .5rem; align-items: center; padding: .35rem .5rem; border-bottom: 1px solid #e5e7eb; }
+    .sel-btn { background: #003d7a; color: #fff; border: none; padding: .3rem .6rem; border-radius: 6px; cursor: pointer; }
+    .del-btn { background: #7a0000; color: #fff; border: none; padding: .3rem .6rem; border-radius: 6px; cursor: pointer; }
+    .danger-all { background: #ffdddd; color: #7a0000; border: none; padding: .5rem .8rem; border-radius: 8px; cursor: button; margin-top: .5rem; }
+    .toolbar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+  </style>
+</head>
+<body>
+
+<form id="mailForm" autocomplete="on">
+  <h2>持出／返却 連絡</h2>
+
+  <label>宛先（To）</label>
+  <input type="text" id="to" placeholder="例: a@example.com, b@example.com" required>
+  <small class="hint">複数はカンマ区切り（,）</small>
+
+  <label>機材名（任意）</label>
+  <input type="text" id="device" placeholder="例: スマホ1 / Wi-Fiルータ など">
+
+  <label>担当者名（入力可・候補から選択可）</label>
+  <input type="text" id="person" placeholder="例: 山田太郎 / 佐藤花子 など">
+  <div class="toolbar">
+    <button type="button" class="link-like" id="toggleManager">担当者選択</button>
+  </div>
+
+  <div id="personManager">
+    <h3>担当者一覧（保存上限：100名）</h3>
+    <ul id="personListView"></ul>
+  </div>
+
+  <div class="btn-row">
+    <button type="button" class="btn btn-out" id="sendOut">持出</button>
+    <button type="button" class="btn btn-ret" id="sendRet">返却</button>
+  </div>
+</form>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./service-worker.js').catch(console.error);
+    });
+  }
+
+  const LS_KEYS = { to: 'mailForm.prev.to', device: 'mailForm.prev.device', person: 'mailForm.prev.person', personList: 'mailForm.persons' };
+  const PERSON_LIST_MAX = 100;
+
+  const $ = (id) => document.getElementById(id);
+  const toEl = $('to');
+  const deviceEl = $('device');
+  const personEl = $('person');
+  const personManagerEl = $('personManager');
+  const personListViewEl = $('personListView');
+
+  function normalizeList(s) { return (s || '').split(',').map(x => x.trim()).filter(Boolean).join(', '); }
+  function loadPersons() { try { const json = localStorage.getItem(LS_KEYS.personList); const arr = json ? JSON.parse(json) : []; return Array.isArray(arr) ? arr : []; } catch { return []; } }
+  function savePersons(arr) {
+    const seen = new Set(); const deduped = [];
+    for (const name of arr) { const key=(name||'').trim(); if(!key) continue; const lower=key.toLowerCase(); if(seen.has(lower)) continue; seen.add(lower); deduped.push(key); if(deduped.length>=PERSON_LIST_MAX) break; }
+    localStorage.setItem(LS_KEYS.personList, JSON.stringify(deduped)); return deduped;
+  }
+  function upsertPerson(name) {
+    const trimmed=(name||'').trim(); if(!trimmed) return; const list=loadPersons(); const lower=trimmed.toLowerCase();
+    const filtered=list.filter(n => (n||'').trim().toLowerCase()!==lower);
+    filtered.unshift(trimmed);
+    const saved=savePersons(filtered);
+    renderPersonList(saved);
+  }
+  function removePerson(name) {
+    const lower=(name||'').trim().toLowerCase(); const list=loadPersons().filter(n => (n||'').trim().toLowerCase()!==lower);
+    const saved=savePersons(list);
+    renderPersonList(saved);
+    if((personEl.value||'').trim().toLowerCase()===lower){ personEl.value=''; localStorage.setItem(LS_KEYS.person,''); }
+  }
+  function renderPersonList(arr) {
+    personListViewEl.innerHTML='';
+    arr.forEach(name => {
+      const li=document.createElement('li');
+      const span=document.createElement('span'); span.textContent=name;
+      const sel=document.createElement('button'); sel.className='sel-btn'; sel.textContent='選択'; sel.addEventListener('click',()=>{ personEl.value=name; localStorage.setItem(LS_KEYS.person, name); });
+      const del=document.createElement('button'); del.className='del-btn'; del.textContent='削除'; del.addEventListener('click',()=>removePerson(name));
+      li.appendChild(span); li.appendChild(sel); li.appendChild(del); personListViewEl.appendChild(li);
+    });
+  }
+
+  (function init(){
+    const persons=loadPersons(); renderPersonList(persons);
+    const prevTo=localStorage.getItem(LS_KEYS.to); const prevDevice=localStorage.getItem(LS_KEYS.device); const prevPerson=localStorage.getItem(LS_KEYS.person);
+    if(prevTo && !toEl.value) toEl.value=prevTo;
+    if(prevDevice && !deviceEl.value) deviceEl.value=prevDevice;
+    if(prevPerson && !personEl.value) personEl.value=prevPerson;
+    personEl.addEventListener('change',()=>upsertPerson(personEl.value));
+    personEl.addEventListener('blur',()=>upsertPerson(personEl.value));
+  })();
+
+  // 件名：持出も返却も指定フォーマットに統一
+  function subjectPhrase(type){
+    const name=(deviceEl.value||'').trim()||'機材';
+    if(type==='out'){
+      return `【持出】${name}\u3000を持ち出しました`;
     }
-    .del-btn {
-        background-color: #7a0000;
-        color: white;
-    }
-</style>
+    return `【返却】${name}\u3000を返却しました`;
+  }
+
+  // 本文：件名と同じ + 担当行（CRLF 改行）
+  function bodyPhrase(type){
+    const subj=subjectPhrase(type);
+    const person=(personEl.value||'').trim();
+    return person? `${subj}\r\n\r\n担当：${person}` : subj;
+  }
+
+  function sendMail(type){
+    const to=normalizeList(toEl.value); if(!to){ alert('宛先（To）を入力してください。'); return; }
+    localStorage.setItem(LS_KEYS.to,to); localStorage.setItem(LS_KEYS.device,(deviceEl.value||'').trim()); localStorage.setItem(LS_KEYS.person,(personEl.value||'').trim()); upsertPerson(personEl.value);
+    const subject=subjectPhrase(type); const body=bodyPhrase(type);
+    const params=new URLSearchParams(); params.set('subject',subject); params.set('body', body);
+    const mailto='mailto:'+encodeURIComponent(to).replace(/%2C/g, ',')+'?'+params.toString();
+    setTimeout(()=>{ window.location.href=mailto; },50); // iOS Safari 対策
+  }
+
+  document.getElementById('sendOut').addEventListener('click',()=>sendMail('out'));
+  document.getElementById('sendRet').addEventListener('click',()=>sendMail('ret'));
+  document.getElementById('toggleManager').addEventListener('click',()=>{ const v=personManagerEl.style.display==='block'; personManagerEl.style.display=v?'none':'block'; });
+</script>
+
+</body>
+</html>
